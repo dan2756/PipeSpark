@@ -1,0 +1,4 @@
+/spark
+/dist/
+*.test
+*.out

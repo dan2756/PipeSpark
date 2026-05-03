@@ -45,3 +45,41 @@ func TestRender(t *testing.T) {
 		})
 	}
 }
+
+func TestLevelClamps(t *testing.T) {
+	s := scale{lo: 0, hi: 10}
+	if got := s.level(-100, 8); got != 0 {
+		t.Errorf("below range: level = %d, want 0", got)
+	}
+	if got := s.level(1e9, 8); got != 7 {
+		t.Errorf("above range: level = %d, want 7", got)
+	}
+
+	flat := scale{lo: 5, hi: 5}
+	for v, want := range map[float64]int{4: 0, 5: 3, 6: 7} {
+		if got := flat.level(v, 8); got != want {
+			t.Errorf("flat scale: level(%v) = %d, want %d", v, got, want)
+		}
+	}
+}
+
+func TestPin(t *testing.T) {
+	data := scale{lo: 10, hi: 20}
+	tests := []struct {
+		name   string
+		lo, hi bound
+		want   scale
+	}{
+		{"none", bound{}, bound{}, scale{10, 20}},
+		{"both", bound{0, true}, bound{100, true}, scale{0, 100}},
+		{"min", bound{0, true}, bound{}, scale{0, 20}},
+		{"max", bound{}, bound{50, true}, scale{10, 50}},
+		{"min above data", bound{30, true}, bound{}, scale{30, 30}},
+		{"max below data", bound{}, bound{5, true}, scale{5, 5}},
+	}
+	for _, tt := range tests {
+		if got := data.pin(tt.lo, tt.hi); got != tt.want {
+			t.Errorf("%s: pin = %+v, want %+v", tt.name, got, tt.want)
+		}
+	}
+}

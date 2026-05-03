@@ -9,8 +9,10 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"runtime/debug"
+	"strconv"
 	"strings"
 )
 
@@ -18,20 +20,26 @@ import (
 // When empty, the module version from the build info is used instead.
 var version = ""
 
-const usage = `Usage: spark [numbers...]
-       command | spark
+const usage = `Usage: spark [flags] [numbers...]
+       command | spark [flags]
 
 Turns a series of numbers into a sparkline. Numbers may be separated by
-whitespace or commas; anything that isn't a number is skipped.
+whitespace or commas. Tokens that aren't numbers are skipped unless
+--strict is given; NaN and Inf are always rejected.
 
 Flags:
+      --min N     pin the bottom of the scale; lower values are clamped
+      --max N     pin the top of the scale; higher values are clamped
+      --strict    treat anything that isn't a number as an error
   -h, --help      show this help
       --version   print the version
 
 Examples:
   seq 1 8 | spark
   spark 1 5 22 13 53
+  spark -3 -1 0 2 5
   echo 1,2,3 | spark
+  spark --min 0 --max 100 < cpu.txt
 `
 
 // cli holds the streams the program talks to, so tests can swap them out.
@@ -41,43 +49,132 @@ type cli struct {
 	stderr io.Writer
 }
 
+// options are the parsed command-line flags.
+type options struct {
+	lo, hi bound
+	strict bool
+}
+
+// bound is an optional end of the scale given on the command line.
+type bound struct {
+	v   float64
+	set bool
+}
+
+func (b *bound) String() string {
+	if b == nil || !b.set {
+		return ""
+	}
+	return strconv.FormatFloat(b.v, 'g', -1, 64)
+}
+
+func (b *bound) Set(s string) error {
+	v, err := strconv.ParseFloat(s, 64)
+	if err != nil {
+		return errors.New("not a number")
+	}
+	if math.IsNaN(v) || math.IsInf(v, 0) {
+		return errors.New("must be a finite number")
+	}
+	b.v, b.set = v, true
+	return nil
+}
+
 func main() {
 	c := &cli{stdin: os.Stdin, stdout: os.Stdout, stderr: os.Stderr}
 	os.Exit(c.run(os.Args[1:]))
 }
 
 func (c *cli) run(args []string) int {
+	var o options
 	fs := flag.NewFlagSet("spark", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
+	fs.Var(&o.lo, "min", "")
+	fs.Var(&o.hi, "max", "")
+	fs.BoolVar(&o.strict, "strict", false, "")
 	showVersion := fs.Bool("version", false, "")
 
-	if err := fs.Parse(args); err != nil {
+	flagArgs, nums := splitArgs(fs, args)
+	if err := fs.Parse(flagArgs); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			fmt.Fprint(c.stdout, usage)
 			return 0
 		}
 		return c.usageError(err)
 	}
+	nums = append(nums, fs.Args()...)
 	if *showVersion {
 		fmt.Fprintln(c.stdout, "spark", versionString())
 		return 0
 	}
+	if o.lo.set && o.hi.set && o.lo.v >= o.hi.v {
+		return c.usageError(errors.New("--min must be less than --max"))
+	}
 
+	p := parser{strict: o.strict}
 	var vals []float64
-	if fs.NArg() > 0 {
-		vals = parseLine(strings.Join(fs.Args(), " "))
+	var err error
+	if len(nums) > 0 {
+		vals, err = p.parseLine(strings.Join(nums, " "))
 	} else {
-		var err error
-		if vals, err = readValues(c.stdin); err != nil {
-			return c.fail(err)
-		}
+		vals, err = p.readAll(c.stdin)
+	}
+	if err != nil {
+		return c.fail(err)
 	}
 	if len(vals) == 0 {
 		return c.fail(errors.New("no numbers in input"))
 	}
 
-	fmt.Fprintln(c.stdout, render(vals, autoScale(vals), blockTicks))
+	fmt.Fprintln(c.stdout, render(vals, autoScale(vals).pin(o.lo, o.hi), blockTicks))
 	return 0
+}
+
+// splitArgs separates flags from numbers so the two can be mixed freely
+// and negative numbers aren't mistaken for flags. Everything after "--"
+// is taken as a number.
+func splitArgs(fs *flag.FlagSet, args []string) (flags, nums []string) {
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		switch {
+		case a == "--":
+			return flags, append(nums, args[i+1:]...)
+		case len(a) < 2 || a[0] != '-' || isNumeric(a):
+			nums = append(nums, a)
+		default:
+			flags = append(flags, a)
+			name := strings.TrimLeft(a, "-")
+			if !strings.Contains(name, "=") && takesValue(fs, name) && i+1 < len(args) {
+				i++
+				flags = append(flags, args[i])
+			}
+		}
+	}
+	return flags, nums
+}
+
+// isNumeric reports whether every token in s is a number, as in "-3" or
+// "-1,-2".
+func isNumeric(s string) bool {
+	toks := fields(s)
+	for _, t := range toks {
+		if _, ok := parseNumber(t); !ok {
+			return false
+		}
+	}
+	return len(toks) > 0
+}
+
+// takesValue reports whether the named flag consumes the next argument.
+func takesValue(fs *flag.FlagSet, name string) bool {
+	f := fs.Lookup(name)
+	if f == nil {
+		return false
+	}
+	if b, ok := f.Value.(interface{ IsBoolFlag() bool }); ok && b.IsBoolFlag() {
+		return false
+	}
+	return true
 }
 
 func (c *cli) fail(err error) int {

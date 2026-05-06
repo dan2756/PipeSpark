@@ -28,11 +28,16 @@ whitespace or commas. Tokens that aren't numbers are skipped unless
 --strict is given; NaN and Inf are always rejected.
 
 Flags:
-      --min N     pin the bottom of the scale; lower values are clamped
-      --max N     pin the top of the scale; higher values are clamped
-      --strict    treat anything that isn't a number as an error
-  -h, --help      show this help
-      --version   print the version
+      --min N       pin the bottom of the scale; lower values are clamped
+      --max N       pin the top of the scale; higher values are clamped
+  -w, --width N     resample the series to exactly N columns
+      --agg FUNC    how --width combines values: avg, max, min or sum
+                    (default avg)
+      --ascii       draw with ASCII characters (_.-~=^*#) instead of blocks
+      --stats       print min, max, avg and count after the sparkline
+      --strict      treat anything that isn't a number as an error
+  -h, --help        show this help
+      --version     print the version
 
 Examples:
   seq 1 8 | spark
@@ -40,6 +45,7 @@ Examples:
   spark -3 -1 0 2 5
   echo 1,2,3 | spark
   spark --min 0 --max 100 < cpu.txt
+  spark -w 60 --agg max --stats < latency.log
 `
 
 // cli holds the streams the program talks to, so tests can swap them out.
@@ -53,6 +59,12 @@ type cli struct {
 type options struct {
 	lo, hi bound
 	strict bool
+	width  int
+	agg    string
+	ascii  bool
+	stats  bool
+
+	aggFn aggregate // resolved from agg
 }
 
 // bound is an optional end of the scale given on the command line.
@@ -92,6 +104,11 @@ func (c *cli) run(args []string) int {
 	fs.Var(&o.lo, "min", "")
 	fs.Var(&o.hi, "max", "")
 	fs.BoolVar(&o.strict, "strict", false, "")
+	fs.IntVar(&o.width, "w", 0, "")
+	fs.IntVar(&o.width, "width", 0, "")
+	fs.StringVar(&o.agg, "agg", "avg", "")
+	fs.BoolVar(&o.ascii, "ascii", false, "")
+	fs.BoolVar(&o.stats, "stats", false, "")
 	showVersion := fs.Bool("version", false, "")
 
 	flagArgs, nums := splitArgs(fs, args)
@@ -107,8 +124,8 @@ func (c *cli) run(args []string) int {
 		fmt.Fprintln(c.stdout, "spark", versionString())
 		return 0
 	}
-	if o.lo.set && o.hi.set && o.lo.v >= o.hi.v {
-		return c.usageError(errors.New("--min must be less than --max"))
+	if err := o.validate(fs); err != nil {
+		return c.usageError(err)
 	}
 
 	p := parser{strict: o.strict}
@@ -126,8 +143,43 @@ func (c *cli) run(args []string) int {
 		return c.fail(errors.New("no numbers in input"))
 	}
 
-	fmt.Fprintln(c.stdout, render(vals, autoScale(vals).pin(o.lo, o.hi), blockTicks))
+	fmt.Fprintln(c.stdout, o.line(vals))
 	return 0
+}
+
+// validate checks flag combinations that the flag package can't.
+func (o *options) validate(fs *flag.FlagSet) error {
+	given := map[string]bool{}
+	fs.Visit(func(f *flag.Flag) { given[f.Name] = true })
+
+	if o.lo.set && o.hi.set && o.lo.v >= o.hi.v {
+		return errors.New("--min must be less than --max")
+	}
+	if (given["w"] || given["width"]) && o.width < 1 {
+		return errors.New("--width must be at least 1")
+	}
+	o.aggFn = aggregates[o.agg]
+	if o.aggFn == nil {
+		return fmt.Errorf("--agg must be one of %s, not %q", aggregateNames(), o.agg)
+	}
+	return nil
+}
+
+// line draws vals as a single line of output.
+func (o *options) line(vals []float64) string {
+	shown := vals
+	if o.width > 0 {
+		shown = resample(vals, o.width, o.aggFn)
+	}
+	ticks := blockTicks
+	if o.ascii {
+		ticks = asciiTicks
+	}
+	out := render(shown, autoScale(shown).pin(o.lo, o.hi), ticks)
+	if o.stats {
+		out += "  " + summarize(vals).String()
+	}
+	return out
 }
 
 // splitArgs separates flags from numbers so the two can be mixed freely

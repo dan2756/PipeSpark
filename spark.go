@@ -2,8 +2,11 @@ package main
 
 import "strings"
 
-// blockTicks are the eight levels of a sparkline, lowest first.
-var blockTicks = []rune("▁▂▃▄▅▆▇█")
+// Tick sets for drawing, lowest level first.
+var (
+	blockTicks = []rune("▁▂▃▄▅▆▇█")
+	asciiTicks = []rune("_.-~=^*#")
+)
 
 // scale maps values in [lo, hi] onto tick levels.
 type scale struct {

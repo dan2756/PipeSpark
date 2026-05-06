@@ -37,6 +37,15 @@ func TestRun(t *testing.T) {
 		{name: "min only", args: []string{"--min=0", "5", "10"}, out: "▅█\n"},
 		{name: "data below pinned min", args: []string{"--min", "100", "1", "2"}, out: "▁▁\n"},
 		{name: "data above pinned max", args: []string{"--max", "0", "1", "2"}, out: "██\n"},
+		{name: "ascii", stdin: "1 2 3 4 5 6 7 8", args: []string{"--ascii"}, out: "_.-~=^*#\n"},
+		{name: "ascii constant", args: []string{"--ascii", "2", "2"}, out: "~~\n"},
+		{name: "stats", args: []string{"--stats", "1", "5", "22", "13", "53"}, out: "▁▁▄▂█  min 1  max 53  avg 18.8  n 5\n"},
+		{name: "width avg", stdin: "1 9 2 8 3 7 4 6", args: []string{"-w", "4"}, out: "▄▄▄▄\n"},
+		{name: "width max", stdin: "1 9 2 8 3 7 4 6", args: []string{"--width", "4", "--agg", "max"}, out: "█▆▃▁\n"},
+		{name: "width min", stdin: "1 9 2 8 3 7 4 6", args: []string{"--width=4", "--agg=min"}, out: "▁▃▆█\n"},
+		{name: "width stretch", args: []string{"-w", "6", "1", "2", "3"}, out: "▁▁▅▅██\n"},
+		{name: "width keeps raw stats", stdin: "1 9 2 8 3 7 4 6", args: []string{"-w", "2", "--stats"}, out: "▄▄  min 1  max 9  avg 5  n 8\n"},
+		{name: "width with pinned scale", stdin: "0 0 10 10", args: []string{"-w", "2", "--min", "0", "--max", "20"}, out: "▁▅\n"},
 
 		{name: "strict", stdin: "1 two 3\n", args: []string{"--strict"}, code: 1, errText: `line 1: not a number: "two"`},
 		{name: "strict args", args: []string{"--strict", "1", "x"}, code: 1, errText: `not a number: "x"`},
@@ -49,6 +58,9 @@ func TestRun(t *testing.T) {
 		{name: "min equals max", args: []string{"--min", "5", "--max", "5", "1"}, code: 2, errText: "--min must be less than --max"},
 		{name: "bad min", args: []string{"--min", "x", "1"}, code: 2, errText: "invalid value"},
 		{name: "min needs value", args: []string{"--min"}, code: 2, errText: "needs an argument"},
+		{name: "zero width", args: []string{"-w", "0", "1"}, code: 2, errText: "--width must be at least 1"},
+		{name: "negative width", args: []string{"--width", "-3", "1"}, code: 2, errText: "--width must be at least 1"},
+		{name: "bad agg", args: []string{"--agg", "median", "1"}, code: 2, errText: `--agg must be one of avg, max, min, sum, not "median"`},
 		{name: "unknown flag", args: []string{"--nope"}, code: 2, errText: "not defined"},
 	}
 	for _, tt := range tests {

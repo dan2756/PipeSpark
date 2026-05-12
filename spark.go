@@ -63,11 +63,21 @@ func (s scale) level(v float64, n int) int {
 	return min(i, n-1)
 }
 
-// render draws one tick per value.
-func render(vals []float64, s scale, ticks []rune) string {
+// render draws one tick per value. With color set, ticks are colored by
+// level and the color is reset at the end.
+func render(vals []float64, s scale, ticks []rune, color bool) string {
 	var b strings.Builder
+	prev := -1
 	for _, v := range vals {
-		b.WriteRune(ticks[s.level(v, len(ticks))])
+		l := s.level(v, len(ticks))
+		if color && l != prev {
+			b.WriteString(colorFor(l, len(ticks)))
+			prev = l
+		}
+		b.WriteRune(ticks[l])
+	}
+	if prev >= 0 {
+		b.WriteString(colorReset)
 	}
 	return b.String()
 }

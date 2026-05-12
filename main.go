@@ -14,6 +14,8 @@ import (
 	"runtime/debug"
 	"strconv"
 	"strings"
+
+	"golang.org/x/term"
 )
 
 // version is set at build time with -ldflags "-X main.version=v1.2.3".
@@ -35,7 +37,12 @@ Flags:
                     (default avg)
       --ascii       draw with ASCII characters (_.-~=^*#) instead of blocks
       --stats       print min, max, avg and count after the sparkline
+      --color       color bars from green (low) to red (high); ignored
+                    when NO_COLOR is set
       --strict      treat anything that isn't a number as an error
+      --field K     take only the K-th number from each line of input
+      --stream      keep reading and redraw the last --width values in
+                    place (width defaults to fit the terminal)
   -h, --help        show this help
       --version     print the version
 
@@ -46,13 +53,18 @@ Examples:
   echo 1,2,3 | spark
   spark --min 0 --max 100 < cpu.txt
   spark -w 60 --agg max --stats < latency.log
+  vmstat 1 | spark --stream --field 13 --min 0 --max 100
 `
 
-// cli holds the streams the program talks to, so tests can swap them out.
+// cli holds what the program talks to, so tests can swap it out.
 type cli struct {
 	stdin  io.Reader
 	stdout io.Writer
 	stderr io.Writer
+	getenv func(string) string
+	// stdoutTerm reports whether stdout is a terminal and, if so, how many
+	// columns wide it is.
+	stdoutTerm func() (cols int, ok bool)
 }
 
 // options are the parsed command-line flags.
@@ -63,6 +75,9 @@ type options struct {
 	agg    string
 	ascii  bool
 	stats  bool
+	color  bool
+	field  int
+	stream bool
 
 	aggFn aggregate // resolved from agg
 }
@@ -93,8 +108,27 @@ func (b *bound) Set(s string) error {
 }
 
 func main() {
-	c := &cli{stdin: os.Stdin, stdout: os.Stdout, stderr: os.Stderr}
+	c := &cli{
+		stdin:      os.Stdin,
+		stdout:     os.Stdout,
+		stderr:     os.Stderr,
+		getenv:     os.Getenv,
+		stdoutTerm: func() (int, bool) { return terminalWidth(os.Stdout) },
+	}
 	os.Exit(c.run(os.Args[1:]))
+}
+
+// terminalWidth reports whether f is a terminal and, if so, its width.
+func terminalWidth(f *os.File) (int, bool) {
+	fd := int(f.Fd())
+	if !term.IsTerminal(fd) {
+		return 0, false
+	}
+	cols, _, err := term.GetSize(fd)
+	if err != nil || cols <= 0 {
+		return 80, true
+	}
+	return cols, true
 }
 
 func (c *cli) run(args []string) int {
@@ -109,6 +143,9 @@ func (c *cli) run(args []string) int {
 	fs.StringVar(&o.agg, "agg", "avg", "")
 	fs.BoolVar(&o.ascii, "ascii", false, "")
 	fs.BoolVar(&o.stats, "stats", false, "")
+	fs.BoolVar(&o.color, "color", false, "")
+	fs.IntVar(&o.field, "field", 0, "")
+	fs.BoolVar(&o.stream, "stream", false, "")
 	showVersion := fs.Bool("version", false, "")
 
 	flagArgs, nums := splitArgs(fs, args)
@@ -127,8 +164,21 @@ func (c *cli) run(args []string) int {
 	if err := o.validate(fs); err != nil {
 		return c.usageError(err)
 	}
+	if len(nums) > 0 && (o.stream || o.field > 0) {
+		name := "--stream"
+		if !o.stream {
+			name = "--field"
+		}
+		return c.usageError(fmt.Errorf("%s reads standard input; it can't be used with numbers as arguments", name))
+	}
+	if o.color && c.env("NO_COLOR") != "" {
+		o.color = false
+	}
 
-	p := parser{strict: o.strict}
+	p := parser{strict: o.strict, field: o.field}
+	if o.stream {
+		return c.stream(&o, p)
+	}
 	var vals []float64
 	var err error
 	if len(nums) > 0 {
@@ -158,6 +208,9 @@ func (o *options) validate(fs *flag.FlagSet) error {
 	if (given["w"] || given["width"]) && o.width < 1 {
 		return errors.New("--width must be at least 1")
 	}
+	if given["field"] && o.field < 1 {
+		return errors.New("--field must be at least 1")
+	}
 	o.aggFn = aggregates[o.agg]
 	if o.aggFn == nil {
 		return fmt.Errorf("--agg must be one of %s, not %q", aggregateNames(), o.agg)
@@ -165,19 +218,24 @@ func (o *options) validate(fs *flag.FlagSet) error {
 	return nil
 }
 
-// line draws vals as a single line of output.
+// line draws vals as a single line of output, resampled to --width.
 func (o *options) line(vals []float64) string {
 	shown := vals
 	if o.width > 0 {
 		shown = resample(vals, o.width, o.aggFn)
 	}
+	return o.draw(shown, vals)
+}
+
+// draw renders shown as a sparkline, followed by stats for raw if asked.
+func (o *options) draw(shown, raw []float64) string {
 	ticks := blockTicks
 	if o.ascii {
 		ticks = asciiTicks
 	}
-	out := render(shown, autoScale(shown).pin(o.lo, o.hi), ticks)
+	out := render(shown, autoScale(shown).pin(o.lo, o.hi), ticks, o.color)
 	if o.stats {
-		out += "  " + summarize(vals).String()
+		out += "  " + summarize(raw).String()
 	}
 	return out
 }
@@ -227,6 +285,13 @@ func takesValue(fs *flag.FlagSet, name string) bool {
 		return false
 	}
 	return true
+}
+
+func (c *cli) env(key string) string {
+	if c.getenv == nil {
+		return ""
+	}
+	return c.getenv(key)
 }
 
 func (c *cli) fail(err error) int {

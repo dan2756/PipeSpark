@@ -45,12 +45,18 @@ func checkFinite(tok string, v float64) error {
 // parser turns text into values.
 type parser struct {
 	strict bool // non-numeric tokens are an error instead of being skipped
+	field  int  // if > 0, keep only the field-th number on each line
 }
 
 // parseLine returns the numbers on a single line.
 func (p parser) parseLine(line string) ([]float64, error) {
-	var vals []float64
-	for _, tok := range fields(line) {
+	type number struct {
+		tok string
+		v   float64
+	}
+	toks := fields(line)
+	var nums []number
+	for _, tok := range toks {
 		v, ok := parseNumber(tok)
 		if !ok {
 			if p.strict {
@@ -58,10 +64,24 @@ func (p parser) parseLine(line string) ([]float64, error) {
 			}
 			continue
 		}
-		if err := checkFinite(tok, v); err != nil {
+		nums = append(nums, number{tok, v})
+	}
+	if p.field > 0 {
+		if len(nums) < p.field {
+			if p.strict && len(toks) > 0 {
+				return nil, fmt.Errorf("no field %d: line has %d number(s)", p.field, len(nums))
+			}
+			return nil, nil
+		}
+		nums = nums[p.field-1 : p.field]
+	}
+
+	var vals []float64
+	for _, n := range nums {
+		if err := checkFinite(n.tok, n.v); err != nil {
 			return nil, err
 		}
-		vals = append(vals, v)
+		vals = append(vals, n.v)
 	}
 	return vals, nil
 }

@@ -82,6 +82,61 @@ func TestRun(t *testing.T) {
 	}
 }
 
+func TestFieldFromStdin(t *testing.T) {
+	out, errOut, code := runCLI(t, "x 1 5\ny 2 3\nheader\nz 3 9\n", "--field", "2")
+	if code != 0 || out != "▃▁█\n" {
+		t.Errorf("exit %d, stdout %q, stderr %q", code, out, errOut)
+	}
+
+	_, errOut, code = runCLI(t, "1 5\n2\n", "--field", "2", "--strict")
+	if code != 1 || !strings.Contains(errOut, "line 2: no field 2: line has 1 number(s)") {
+		t.Errorf("strict short line: exit %d, stderr %q", code, errOut)
+	}
+
+	for _, args := range [][]string{{"--field", "0"}, {"--field=-1"}} {
+		if _, errOut, code := runCLI(t, "1", args...); code != 2 || !strings.Contains(errOut, "--field must be at least 1") {
+			t.Errorf("%v: exit %d, stderr %q", args, code, errOut)
+		}
+	}
+	if _, errOut, code := runCLI(t, "", "--field", "1", "1", "2"); code != 2 || !strings.Contains(errOut, "--field reads standard input") {
+		t.Errorf("--field with args: exit %d, stderr %q", code, errOut)
+	}
+}
+
+func TestColor(t *testing.T) {
+	run := func(noColor string, args ...string) string {
+		var out bytes.Buffer
+		c := &cli{
+			stdin:  strings.NewReader(""),
+			stdout: &out,
+			stderr: &bytes.Buffer{},
+			getenv: func(k string) string {
+				if k == "NO_COLOR" {
+					return noColor
+				}
+				return ""
+			},
+		}
+		if code := c.run(args); code != 0 {
+			t.Fatalf("%v: exit %d", args, code)
+		}
+		return out.String()
+	}
+
+	if got, want := run("", "--color", "1", "2", "2"), "\x1b[38;5;46m▁\x1b[38;5;196m██\x1b[0m\n"; got != want {
+		t.Errorf("--color = %q, want %q", got, want)
+	}
+	if got, want := run("", "--color", "4", "4"), "\x1b[38;5;154m▄▄\x1b[0m\n"; got != want {
+		t.Errorf("--color constant = %q, want %q", got, want)
+	}
+	if got, want := run("1", "--color", "1", "2"), "▁█\n"; got != want {
+		t.Errorf("NO_COLOR set: %q, want %q", got, want)
+	}
+	if got, want := run("", "1", "2"), "▁█\n"; got != want {
+		t.Errorf("no --color: %q, want %q", got, want)
+	}
+}
+
 func TestHelpAndVersion(t *testing.T) {
 	out, _, code := runCLI(t, "", "--help")
 	if code != 0 || !strings.HasPrefix(out, "Usage: spark") {

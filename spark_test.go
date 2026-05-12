@@ -39,7 +39,7 @@ func TestRender(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := render(tt.vals, autoScale(tt.vals), blockTicks); got != tt.want {
+			if got := render(tt.vals, autoScale(tt.vals), blockTicks, false); got != tt.want {
 				t.Errorf("render(%v) = %q, want %q", tt.vals, got, tt.want)
 			}
 		})

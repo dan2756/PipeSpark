@@ -98,6 +98,36 @@ func TestStreamWidthFitsTerminal(t *testing.T) {
 	}
 }
 
+func TestStreamNarrowsForLongStats(t *testing.T) {
+	// Stats longer than the room set aside for them would make every frame
+	// wrap, so the window gives up columns until the whole line fits.
+	var in strings.Builder
+	for i := 0; i <= 40; i++ {
+		fmt.Fprintf(&in, "%v\n", 12345678.5+float64(i))
+	}
+	out, _, code := runStream(t, fakeTerm(80), in.String(), "--stats")
+	if code != 0 {
+		t.Fatalf("exit %d", code)
+	}
+	frames := strings.Split(strings.TrimPrefix(strings.TrimSuffix(out, "\n"), "\r"), "\r")
+	for i, f := range frames {
+		f = strings.TrimSuffix(f, "\x1b[K")
+		if n := utf8.RuneCountInString(f); n > 79 {
+			t.Errorf("frame %d is %d columns wide: %q", i, n, f)
+		}
+	}
+	last := strings.TrimSuffix(frames[len(frames)-1], "\x1b[K")
+	if want := "▁▁▁▁▂▂▂▃▃▃▄▄▄▅▅▅▆▆▆▇▇▇████  min 12345693.5  max 12345718.5  avg 12345706  n 26"; last != want {
+		t.Errorf("last frame = %q, want %q", last, want)
+	}
+
+	// An explicit --width is left alone.
+	out, _, _ = runStream(t, fakeTerm(80), in.String(), "--stats", "-w", "31")
+	if !strings.HasSuffix(out, "  n 31\x1b[K\n") {
+		t.Errorf("--width 31: stdout ends %q", out[max(0, len(out)-20):])
+	}
+}
+
 func TestStreamDefaultWidthWithoutTerminal(t *testing.T) {
 	out, _, _ := runStream(t, nil, strings.Repeat("1 2\n", 100))
 	frames := strings.Split(strings.TrimSuffix(out, "\n"), "\n")

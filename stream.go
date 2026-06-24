@@ -14,7 +14,8 @@ const (
 	// and --width isn't given.
 	defaultStreamWidth = 60
 	// statsRoom is how many columns are left free for --stats when the
-	// window is sized to fit the terminal.
+	// window is sized to fit the terminal. Longer stats narrow the window
+	// further as they appear.
 	statsRoom = 48
 	// minStreamWidth keeps the window usable on very narrow terminals.
 	minStreamWidth = 10
@@ -35,6 +36,15 @@ func (w *window) push(v float64) {
 	w.vals[len(w.vals)-1] = v
 }
 
+// fit narrows the window for good, dropping the oldest values, until
+// width(w.vals) is at most cols or only minStreamWidth values are left.
+func (w *window) fit(cols int, width func([]float64) int) {
+	for len(w.vals) > minStreamWidth && width(w.vals) > cols {
+		w.vals = w.vals[1:]
+		w.size = len(w.vals)
+	}
+}
+
 // streamWidth picks the window size: --width if given, otherwise whatever
 // fits on one line of the terminal.
 func (o *options) streamWidth(cols int, tty bool) int {
@@ -49,6 +59,15 @@ func (o *options) streamWidth(cols int, tty bool) int {
 		w -= statsRoom
 	}
 	return max(w, minStreamWidth)
+}
+
+// frameWidth is how many columns a frame of vals takes up on screen.
+func (o *options) frameWidth(vals []float64) int {
+	n := len(vals)
+	if o.stats {
+		n += len("  " + summarize(vals).String())
+	}
+	return n
 }
 
 type readResult struct {
@@ -84,6 +103,10 @@ func (c *cli) stream(o *options, p parser) int {
 		cols, tty = c.stdoutTerm()
 	}
 	win := &window{size: o.streamWidth(cols, tty)}
+	// The room left for --stats is a guess; if the real stats turn out
+	// longer, the window has to give way or every frame would wrap and
+	// leave a stale copy behind.
+	fit := tty && o.width == 0 && o.stats
 
 	lines := make(chan readResult)
 	done := make(chan struct{})
@@ -123,7 +146,12 @@ func (c *cli) stream(o *options, p parser) int {
 			win.push(v)
 		}
 		if len(vals) > 0 {
-			c.frame(o.draw(win.vals, win.vals), tty)
+			if fit {
+				win.fit(cols-1, o.frameWidth)
+			}
+			if err := c.frame(o.draw(win.vals, win.vals), tty); err != nil {
+				return c.fail(err)
+			}
 			drawn = true
 		}
 
@@ -143,12 +171,13 @@ func (c *cli) stream(o *options, p parser) int {
 }
 
 // frame writes one redraw of the sparkline.
-func (c *cli) frame(line string, tty bool) {
+func (c *cli) frame(line string, tty bool) error {
 	if tty {
 		// Return to the start of the line, draw, and clear whatever is
 		// left of a longer previous frame.
-		io.WriteString(c.stdout, "\r"+line+"\x1b[K")
-		return
+		_, err := io.WriteString(c.stdout, "\r"+line+"\x1b[K")
+		return err
 	}
-	io.WriteString(c.stdout, line+"\n")
+	_, err := io.WriteString(c.stdout, line+"\n")
+	return err
 }

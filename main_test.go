@@ -2,6 +2,8 @@ package main
 
 import (
 	"bytes"
+	"errors"
+	"os"
 	"strings"
 	"testing"
 )
@@ -46,6 +48,11 @@ func TestRun(t *testing.T) {
 		{name: "width stretch", args: []string{"-w", "6", "1", "2", "3"}, out: "▁▁▅▅██\n"},
 		{name: "width keeps raw stats", stdin: "1 9 2 8 3 7 4 6", args: []string{"-w", "2", "--stats"}, out: "▄▄  min 1  max 9  avg 5  n 8\n"},
 		{name: "width with pinned scale", stdin: "0 0 10 10", args: []string{"-w", "2", "--min", "0", "--max", "20"}, out: "▁▅\n"},
+		{name: "huge values", args: []string{"0", "1e308"}, out: "▁█\n"},
+		{name: "huge range", args: []string{"--", "-1e308", "1e308", "0"}, out: "▁█▅\n"},
+		{name: "huge pinned range", args: []string{"--min", "-1e308", "--max", "1e308", "0"}, out: "▅\n"},
+		{name: "huge width avg", args: []string{"-w", "2", "1", "1e308", "1e308"}, out: "▁█\n"},
+		{name: "huge width sum", args: []string{"-w", "2", "--agg", "sum", "1", "1e308", "1e308"}, out: "▁█\n"},
 
 		{name: "strict", stdin: "1 two 3\n", args: []string{"--strict"}, code: 1, errText: `line 1: not a number: "two"`},
 		{name: "strict args", args: []string{"--strict", "1", "x"}, code: 1, errText: `not a number: "x"`},
@@ -60,6 +67,7 @@ func TestRun(t *testing.T) {
 		{name: "min needs value", args: []string{"--min"}, code: 2, errText: "needs an argument"},
 		{name: "zero width", args: []string{"-w", "0", "1"}, code: 2, errText: "--width must be at least 1"},
 		{name: "negative width", args: []string{"--width", "-3", "1"}, code: 2, errText: "--width must be at least 1"},
+		{name: "huge width", args: []string{"-w", "9223372036854775807", "1"}, code: 2, errText: "--width must be at most 1000000"},
 		{name: "bad agg", args: []string{"--agg", "median", "1"}, code: 2, errText: `--agg must be one of avg, max, min, sum, not "median"`},
 		{name: "unknown flag", args: []string{"--nope"}, code: 2, errText: "not defined"},
 	}
@@ -79,6 +87,21 @@ func TestRun(t *testing.T) {
 				t.Errorf("unexpected stderr %q", errOut)
 			}
 		})
+	}
+}
+
+// failWriter fails every write, like a full disk.
+type failWriter struct{}
+
+func (failWriter) Write([]byte) (int, error) { return 0, errors.New("no space left on device") }
+
+func TestWriteError(t *testing.T) {
+	for _, args := range [][]string{{"1", "2"}, {"--stream"}} {
+		var errOut bytes.Buffer
+		c := &cli{stdin: strings.NewReader("1\n2\n"), stdout: failWriter{}, stderr: &errOut}
+		if code := c.run(args); code != 1 || !strings.Contains(errOut.String(), "no space left on device") {
+			t.Errorf("%v: exit %d, stderr %q", args, code, errOut.String())
+		}
 	}
 }
 
@@ -134,6 +157,37 @@ func TestColor(t *testing.T) {
 	}
 	if got, want := run("", "1", "2"), "▁█\n"; got != want {
 		t.Errorf("no --color: %q, want %q", got, want)
+	}
+}
+
+func TestUsageWhenStdinIsTerminal(t *testing.T) {
+	var out, errOut bytes.Buffer
+	c := &cli{
+		stdin:     strings.NewReader(""),
+		stdout:    &out,
+		stderr:    &errOut,
+		stdinTerm: func() bool { return true },
+	}
+	if code := c.run(nil); code != 2 || !strings.HasPrefix(errOut.String(), "Usage: spark") {
+		t.Errorf("no input: exit %d, stderr %q", code, errOut.String())
+	}
+
+	// Numbers on the command line don't need stdin.
+	out.Reset()
+	errOut.Reset()
+	if code := c.run([]string{"1", "2"}); code != 0 || out.String() != "▁█\n" {
+		t.Errorf("with args: exit %d, stdout %q, stderr %q", code, out.String(), errOut.String())
+	}
+}
+
+func TestPingOutput(t *testing.T) {
+	data, err := os.ReadFile("testdata/ping-linux.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, errOut, code := runCLI(t, string(data), "--field", "4", "--stats")
+	if want := "▁▁█▁▁  min 11.8  max 35.1  avg 16.64  n 5\n"; code != 0 || out != want {
+		t.Errorf("exit %d, stdout %q, want %q (stderr %q)", code, out, want, errOut)
 	}
 }
 

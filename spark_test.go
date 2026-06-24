@@ -1,6 +1,9 @@
 package main
 
-import "testing"
+import (
+	"math"
+	"testing"
+)
 
 func TestLevelEndpoints(t *testing.T) {
 	s := scale{lo: 0, hi: 1}
@@ -36,6 +39,7 @@ func TestRender(t *testing.T) {
 		{"single", []float64{42}, "▄"},
 		{"negative", []float64{-3, -2, -1, 0}, "▁▃▆█"},
 		{"floats", []float64{0.1, 0.2, 0.16}, "▁█▅"},
+		{"band edge", []float64{0.1, 0.2, 0.15}, "▁█▅"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -43,6 +47,36 @@ func TestRender(t *testing.T) {
 				t.Errorf("render(%v) = %q, want %q", tt.vals, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestLevelBandEdges(t *testing.T) {
+	// A value exactly k/8 of the way up the range starts band k, however
+	// awkward the range is to represent in binary.
+	ranges := []scale{{0, 1}, {0.1, 0.2}, {0, 0.3}, {-1.1, 2.2}, {1e-6, 3e-6}, {100, 1100}, {-0.7, -0.1}}
+	for _, s := range ranges {
+		for k := 0; k <= 8; k++ {
+			v := s.lo + (s.hi-s.lo)*float64(k)/8
+			if got, want := s.level(v, 8), min(k, 7); got != want {
+				t.Errorf("scale %v: level(%v) = %d, want %d", s, v, got, want)
+			}
+		}
+	}
+}
+
+func TestLevelHugeRange(t *testing.T) {
+	// Ranges near the limits of a float64 must not overflow into an
+	// out-of-range tick.
+	for _, s := range []scale{{0, 1e308}, {-1e308, 1e308}, {-math.MaxFloat64, math.MaxFloat64}} {
+		if got := s.level(s.lo, 8); got != 0 {
+			t.Errorf("scale %v: level(lo) = %d, want 0", s, got)
+		}
+		if got := s.level(s.hi, 8); got != 7 {
+			t.Errorf("scale %v: level(hi) = %d, want 7", s, got)
+		}
+		if mid := s.lo/2 + s.hi/2; s.level(mid, 8) != 4 {
+			t.Errorf("scale %v: level(%v) = %d, want 4", s, mid, s.level(mid, 8))
+		}
 	}
 }
 

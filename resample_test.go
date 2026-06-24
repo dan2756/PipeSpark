@@ -1,6 +1,7 @@
 package main
 
 import (
+	"math"
 	"reflect"
 	"testing"
 )
@@ -27,6 +28,9 @@ func TestResample(t *testing.T) {
 		{"stretch uneven", []float64{1, 2, 3}, 8, "sum", []float64{1, 1, 1, 2, 2, 2, 3, 3}},
 		{"stretch single", []float64{4}, 3, "avg", []float64{4, 4, 4}},
 		{"negative", []float64{-4, -2, 2, 4}, 2, "avg", []float64{-3, 3}},
+		// Totals beyond a float64 average correctly and sum to the limit.
+		{"huge avg", []float64{1e308, 1e308, -1e308, -1e308}, 2, "avg", []float64{1e308, -1e308}},
+		{"huge sum", []float64{1e308, 1e308, -1e308, -1e308}, 2, "sum", []float64{math.MaxFloat64, -math.MaxFloat64}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -60,6 +64,9 @@ func TestSummary(t *testing.T) {
 	got := summarize([]float64{1, 5, 22, 13, 53}).String()
 	if want := "min 1  max 53  avg 18.8  n 5"; got != want {
 		t.Errorf("summary = %q, want %q", got, want)
+	}
+	if got := summarize([]float64{1e308, 1e308}).avg; got != 1e308 {
+		t.Errorf("avg of huge values = %v, want 1e308", got)
 	}
 }
 

@@ -11,10 +11,12 @@ import (
 	"unicode"
 )
 
-// fields splits a line into tokens on whitespace and commas.
+// fields splits a line into tokens on whitespace and commas. It also
+// splits on '=', so key=value pairs like ping's "time=12.3" yield their
+// value.
 func fields(line string) []string {
 	return strings.FieldsFunc(line, func(r rune) bool {
-		return r == ',' || unicode.IsSpace(r)
+		return r == ',' || r == '=' || unicode.IsSpace(r)
 	})
 }
 

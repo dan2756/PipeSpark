@@ -26,8 +26,9 @@ const usage = `Usage: spark [flags] [numbers...]
        command | spark [flags]
 
 Turns a series of numbers into a sparkline. Numbers may be separated by
-whitespace or commas. Tokens that aren't numbers are skipped unless
---strict is given; NaN and Inf are always rejected.
+whitespace, commas or '=' (so key=value pairs work). Tokens that aren't
+numbers are skipped unless --strict is given; NaN and Inf are always
+rejected.
 
 Flags:
       --min N       pin the bottom of the scale; lower values are clamped
@@ -54,7 +55,12 @@ Examples:
   spark --min 0 --max 100 < cpu.txt
   spark -w 60 --agg max --stats < latency.log
   vmstat 1 | spark --stream --field 13 --min 0 --max 100
+  ping example.com | spark --stream --field 4 --stats
 `
+
+// maxWidth caps --width, which sets how much is allocated up front; no
+// sparkline needs to be this wide.
+const maxWidth = 1_000_000
 
 // cli holds what the program talks to, so tests can swap it out.
 type cli struct {
@@ -62,6 +68,8 @@ type cli struct {
 	stdout io.Writer
 	stderr io.Writer
 	getenv func(string) string
+	// stdinTerm reports whether stdin is a terminal.
+	stdinTerm func() bool
 	// stdoutTerm reports whether stdout is a terminal and, if so, how many
 	// columns wide it is.
 	stdoutTerm func() (cols int, ok bool)
@@ -113,6 +121,7 @@ func main() {
 		stdout:     os.Stdout,
 		stderr:     os.Stderr,
 		getenv:     os.Getenv,
+		stdinTerm:  func() bool { return term.IsTerminal(int(os.Stdin.Fd())) },
 		stdoutTerm: func() (int, bool) { return terminalWidth(os.Stdout) },
 	}
 	os.Exit(c.run(os.Args[1:]))
@@ -174,6 +183,12 @@ func (c *cli) run(args []string) int {
 	if o.color && c.env("NO_COLOR") != "" {
 		o.color = false
 	}
+	if len(nums) == 0 && c.stdinTerm != nil && c.stdinTerm() {
+		// Nothing piped in and nothing on the command line: waiting for
+		// someone to type numbers is rarely what was meant.
+		fmt.Fprint(c.stderr, usage)
+		return 2
+	}
 
 	p := parser{strict: o.strict, field: o.field}
 	if o.stream {
@@ -193,7 +208,9 @@ func (c *cli) run(args []string) int {
 		return c.fail(errors.New("no numbers in input"))
 	}
 
-	fmt.Fprintln(c.stdout, o.line(vals))
+	if _, err := fmt.Fprintln(c.stdout, o.line(vals)); err != nil {
+		return c.fail(err)
+	}
 	return 0
 }
 
@@ -207,6 +224,9 @@ func (o *options) validate(fs *flag.FlagSet) error {
 	}
 	if (given["w"] || given["width"]) && o.width < 1 {
 		return errors.New("--width must be at least 1")
+	}
+	if o.width > maxWidth {
+		return fmt.Errorf("--width must be at most %d", maxWidth)
 	}
 	if given["field"] && o.field < 1 {
 		return errors.New("--field must be at least 1")

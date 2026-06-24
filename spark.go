@@ -1,6 +1,9 @@
 package main
 
-import "strings"
+import (
+	"math"
+	"strings"
+)
 
 // Tick sets for drawing, lowest level first.
 var (
@@ -59,7 +62,17 @@ func (s scale) level(v float64, n int) int {
 	case s.hi <= s.lo:
 		return (n - 1) / 2
 	}
-	i := int((v - s.lo) * float64(n) / (s.hi - s.lo))
+	span, off := s.hi-s.lo, v-s.lo
+	if math.IsInf(span, 0) {
+		// The range is wider than a float64 can hold, as from -1e308 to
+		// 1e308; halving everything first keeps the arithmetic finite.
+		span, off = s.hi/2-s.lo/2, v/2-s.lo/2
+	}
+	// Dividing before multiplying by n keeps values near the top of a huge
+	// range from overflowing. The nudge keeps values that belong exactly on
+	// a band edge, such as 0.15 between 0.1 and 0.2, from rounding down
+	// into the band below.
+	i := int(off/span*float64(n) + 1e-9)
 	return min(i, n-1)
 }
 

@@ -9,7 +9,7 @@ import (
 
 // summary describes a series for --stats.
 type summary struct {
-	min, max, sum float64
+	min, max, avg float64
 	n             int
 }
 
@@ -17,22 +17,17 @@ func summarize(vals []float64) summary {
 	if len(vals) == 0 {
 		return summary{}
 	}
-	s := summary{min: vals[0], max: vals[0], n: len(vals)}
+	s := summary{min: vals[0], max: vals[0], avg: mean(vals), n: len(vals)}
 	for _, v := range vals {
 		s.min = min(s.min, v)
 		s.max = max(s.max, v)
-		s.sum += v
 	}
 	return s
 }
 
 func (s summary) String() string {
-	avg := 0.0
-	if s.n > 0 {
-		avg = s.sum / float64(s.n)
-	}
 	return fmt.Sprintf("min %s  max %s  avg %s  n %d",
-		formatNum(s.min), formatNum(s.max), formatNum(avg), s.n)
+		formatNum(s.min), formatNum(s.max), formatNum(s.avg), s.n)
 }
 
 // formatNum prints v compactly: whole numbers without a fraction, larger

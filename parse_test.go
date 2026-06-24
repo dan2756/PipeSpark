@@ -2,16 +2,25 @@ package main
 
 import (
 	"flag"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
 )
 
 func TestFields(t *testing.T) {
-	got := fields("1,2, 3\t4\r\n,,5 ")
-	want := []string{"1", "2", "3", "4", "5"}
-	if !reflect.DeepEqual(got, want) {
-		t.Errorf("fields = %q, want %q", got, want)
+	tests := map[string][]string{
+		"1,2, 3\t4\r\n,,5 ": {"1", "2", "3", "4", "5"},
+		"time=12.3 ms":      {"time", "12.3", "ms"},
+		"a=1,b=2":           {"a", "1", "b", "2"},
+		"--min=-1":          {"--min", "-1"},
+		"  \t\n":            {},
+	}
+	for line, want := range tests {
+		if got := fields(line); !reflect.DeepEqual(got, want) {
+			t.Errorf("fields(%q) = %q, want %q", line, got, want)
+		}
 	}
 }
 
@@ -25,6 +34,7 @@ func TestParseLine(t *testing.T) {
 		{"1e3 2.5E-1 -4e+2", []float64{1000, 0.25, -400}},
 		{"load 0.42 0.36 0.30", []float64{0.42, 0.36, 0.30}},
 		{"12ms 15 - 3", []float64{15, 3}},
+		{"64 bytes from 1.1.1.1: icmp_seq=1 ttl=57 time=12.3 ms", []float64{64, 1, 57, 12.3}},
 		{"", nil},
 	}
 	for _, tt := range tests {
@@ -81,6 +91,34 @@ func TestReadAll(t *testing.T) {
 	_, err = parser{strict: true}.readAll(strings.NewReader("1\n2\nthree\n"))
 	if err == nil || !strings.HasPrefix(err.Error(), "line 3:") {
 		t.Errorf("got %v, want error on line 3", err)
+	}
+}
+
+func TestReadFixtures(t *testing.T) {
+	tests := []struct {
+		file  string
+		field int
+		want  []float64
+	}{
+		{"ping-linux.txt", 4, []float64{11.8, 12.4, 35.1, 12.0, 11.9}},
+		// The timeout line has only one number, so it is skipped.
+		{"ping-macos.txt", 4, []float64{14.213, 13.877, 41.502, 14.020}},
+		{"vmstat.txt", 13, []float64{3, 41, 88, 12}},
+	}
+	for _, tt := range tests {
+		f, err := os.Open(filepath.Join("testdata", tt.file))
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := parser{field: tt.field}.readAll(f)
+		f.Close()
+		if err != nil {
+			t.Errorf("%s: %v", tt.file, err)
+			continue
+		}
+		if !reflect.DeepEqual(got, tt.want) {
+			t.Errorf("%s field %d = %v, want %v", tt.file, tt.field, got, tt.want)
+		}
 	}
 }
 

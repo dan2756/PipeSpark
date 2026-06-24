@@ -1,6 +1,7 @@
 package main
 
 import (
+	"math"
 	"slices"
 	"strings"
 )
@@ -9,10 +10,12 @@ import (
 type aggregate func([]float64) float64
 
 var aggregates = map[string]aggregate{
-	"avg": func(v []float64) float64 { return sum(v) / float64(len(v)) },
+	"avg": mean,
 	"max": func(v []float64) float64 { return slices.Max(v) },
 	"min": func(v []float64) float64 { return slices.Min(v) },
-	"sum": sum,
+	// A total too large for a float64 is held at the largest one, so it
+	// still draws as the tallest (or lowest) bar.
+	"sum": func(v []float64) float64 { return max(-math.MaxFloat64, min(sum(v), math.MaxFloat64)) },
 }
 
 func sum(vals []float64) float64 {
@@ -21,6 +24,20 @@ func sum(vals []float64) float64 {
 		t += v
 	}
 	return t
+}
+
+// mean averages vals, which must not be empty. If the total is too large
+// for a float64, each value is divided down before adding instead.
+func mean(vals []float64) float64 {
+	n := float64(len(vals))
+	if m := sum(vals) / n; !math.IsInf(m, 0) {
+		return m
+	}
+	var m float64
+	for _, v := range vals {
+		m += v / n
+	}
+	return m
 }
 
 // aggregateNames lists the valid --agg values for messages.

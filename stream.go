@@ -123,23 +123,28 @@ func (c *cli) stream(o *options, p parser) int {
 	}
 
 	drawn := false
-	endLine := func() {
+	// endLine finishes an in-place redraw so the next prompt starts on a
+	// fresh line. Callers that already have an error to report ignore a
+	// failure here; the success path must not.
+	endLine := func() error {
 		if tty && drawn {
-			fmt.Fprintln(c.stdout)
+			_, err := fmt.Fprintln(c.stdout)
+			return err
 		}
+		return nil
 	}
 	for n := 1; ; n++ {
 		var r readResult
 		select {
 		case r = <-lines:
 		case <-interrupt:
-			endLine()
+			_ = endLine()
 			return 130
 		}
 
 		vals, err := p.parseLine(r.line)
 		if err != nil {
-			endLine()
+			_ = endLine()
 			return c.fail(fmt.Errorf("line %d: %w", n, err))
 		}
 		for _, v := range vals {
@@ -159,14 +164,16 @@ func (c *cli) stream(o *options, p parser) int {
 			break
 		}
 		if r.err != nil {
-			endLine()
+			_ = endLine()
 			return c.fail(r.err)
 		}
 	}
 	if !drawn {
 		return c.fail(errors.New("no numbers in input"))
 	}
-	endLine()
+	if err := endLine(); err != nil {
+		return c.fail(err)
+	}
 	return 0
 }
 

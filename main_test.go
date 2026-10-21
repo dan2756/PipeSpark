@@ -103,13 +103,27 @@ type failWriter struct{}
 func (failWriter) Write([]byte) (int, error) { return 0, errors.New("no space left on device") }
 
 func TestWriteError(t *testing.T) {
-	for _, args := range [][]string{{"1", "2"}, {"--stream"}} {
+	for _, args := range [][]string{{"1", "2"}, {"--stream"}, {"--help"}, {"-h"}, {"--version"}} {
 		var errOut bytes.Buffer
 		c := &cli{stdin: strings.NewReader("1\n2\n"), stdout: failWriter{}, stderr: &errOut}
 		if code := c.run(args); code != 1 || !strings.Contains(errOut.String(), "no space left on device") {
 			t.Errorf("%v: exit %d, stderr %q", args, code, errOut.String())
 		}
 	}
+}
+
+// failAfter accepts n writes, then fails. n counts Write calls.
+type failAfter struct {
+	n   int
+	err error
+}
+
+func (f *failAfter) Write(p []byte) (int, error) {
+	if f.n <= 0 {
+		return 0, f.err
+	}
+	f.n--
+	return len(p), nil
 }
 
 func TestFieldFromStdin(t *testing.T) {

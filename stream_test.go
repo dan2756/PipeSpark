@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -34,6 +35,21 @@ func TestStreamFrames(t *testing.T) {
 	// One frame per line; the window keeps the last two values.
 	if want := "▄\n▁█\n▁█\n"; out != want {
 		t.Errorf("stdout = %q, want %q", out, want)
+	}
+}
+
+func TestStreamFinalNewlineWriteError(t *testing.T) {
+	// Two in-place frames succeed; the newline that finishes the line does not.
+	var errOut bytes.Buffer
+	c := &cli{
+		stdin:      strings.NewReader("1\n2\n"),
+		stdout:     &failAfter{n: 2, err: errors.New("no space left on device")},
+		stderr:     &errOut,
+		stdoutTerm: fakeTerm(80),
+	}
+	code := c.run([]string{"--stream", "-w", "3"})
+	if code != 1 || !strings.Contains(errOut.String(), "no space left on device") {
+		t.Errorf("exit %d, stderr %q", code, errOut.String())
 	}
 }
 

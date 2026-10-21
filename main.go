@@ -165,14 +165,18 @@ func (c *cli) run(args []string) int {
 	flagArgs, nums := splitArgs(fs, args)
 	if err := fs.Parse(flagArgs); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
-			fmt.Fprint(c.stdout, usage)
+			if _, werr := fmt.Fprint(c.stdout, usage); werr != nil {
+				return c.fail(werr)
+			}
 			return 0
 		}
 		return c.usageError(err)
 	}
 	nums = append(nums, fs.Args()...)
 	if *showVersion {
-		fmt.Fprintln(c.stdout, "spark", versionString())
+		if _, err := fmt.Fprintln(c.stdout, "spark", versionString()); err != nil {
+			return c.fail(err)
+		}
 		return 0
 	}
 	if err := o.validate(fs); err != nil {

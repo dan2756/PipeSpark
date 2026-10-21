@@ -30,6 +30,8 @@ func TestRun(t *testing.T) {
 		{name: "commas", stdin: "1,2,3\n", out: "▁▅█\n"},
 		{name: "args win over stdin", stdin: "9 9 9", args: []string{"1", "2"}, out: "▁█\n"},
 		{name: "negative args", args: []string{"-3", "-2", "-1", "0"}, out: "▁▃▆█\n"},
+		{name: "negative list with word", args: []string{"-1,foo", "2"}, out: "▁█\n"},
+		{name: "skip word in negative list", args: []string{"-1,-2,x"}, out: "█▁\n"},
 		{name: "double dash", args: []string{"--", "-1", "1"}, out: "▁█\n"},
 		{name: "skips words", stdin: "cpu 10\ncpu 20\n", out: "▁█\n"},
 		{name: "constant", stdin: "5 5 5 5", out: "▄▄▄▄\n"},
@@ -56,6 +58,7 @@ func TestRun(t *testing.T) {
 
 		{name: "strict", stdin: "1 two 3\n", args: []string{"--strict"}, code: 1, errText: `line 1: not a number: "two"`},
 		{name: "strict args", args: []string{"--strict", "1", "x"}, code: 1, errText: `not a number: "x"`},
+		{name: "strict negative list", args: []string{"-1,foo", "--strict"}, code: 1, errText: `not a number: "foo"`},
 		{name: "nan", stdin: "1 NaN 3", code: 1, errText: "NaN and Inf are not allowed"},
 		{name: "inf", stdin: "1\n+Inf\n", code: 1, errText: `line 2: "+Inf"`},
 		{name: "overflow", stdin: "1e999", code: 1, errText: "out of range"},

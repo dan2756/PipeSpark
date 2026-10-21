@@ -217,6 +217,9 @@ func TestHelpAndVersion(t *testing.T) {
 	if code != 0 || !strings.HasPrefix(out, "Usage: spark") {
 		t.Errorf("--help: code %d, out %q", code, out)
 	}
+	if !strings.Contains(out, "or 60 when") {
+		t.Errorf("--help should mention the non-terminal --stream width, got %q", out)
+	}
 	out, _, code = runCLI(t, "", "-h")
 	if code != 0 || !strings.HasPrefix(out, "Usage: spark") {
 		t.Errorf("-h: code %d, out %q", code, out)

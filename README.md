@@ -70,7 +70,7 @@ $ for i in $(seq 20); do curl -so /dev/null -w '%{time_total}\n' https://example
 | `--color` | Color bars on a green-to-red gradient. Ignored when `NO_COLOR` is set. |
 | `--strict` | Treat anything that isn't a number as an error instead of skipping it. |
 | `--field K` | Take only the K-th number from each line of input. |
-| `--stream` | Keep reading and redraw the last `--width` values in place. |
+| `--stream` | Keep reading and redraw the last `--width` values in place. Without `--width`, the window fits the terminal, or is 60 columns when stdout isn't one. |
 | `-h`, `--help` | Show usage. |
 | `--version` | Print the version. |
 
@@ -148,9 +148,10 @@ is the response time.
 
 `--stream` keeps reading standard input and redraws the sparkline after
 every line, so you can watch a command that prints a number at a time. The
-window holds the last `--width` values; without `--width` it is sized to fit
+window holds the last `--width` values. Without `--width` it is sized to fit
 the terminal (leaving room for `--stats` if you asked for it, and narrowing
-further if the stats need more room than that).
+further if the stats need more room than that). When stdout isn't a terminal,
+the window is 60 columns wide.
 
 ```
 $ vmstat 1 | spark --stream --field 13 --min 0 --max 100 --stats

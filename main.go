@@ -266,15 +266,16 @@ func (o *options) draw(shown, raw []float64) string {
 }
 
 // splitArgs separates flags from numbers so the two can be mixed freely
-// and negative numbers aren't mistaken for flags. Everything after "--"
-// is taken as a number.
+// and negative numbers aren't mistaken for flags. A comma-separated list
+// such as "-1,foo" is input, same as "1,foo". Everything after "--" is
+// taken as a number.
 func splitArgs(fs *flag.FlagSet, args []string) (flags, nums []string) {
 	for i := 0; i < len(args); i++ {
 		a := args[i]
 		switch {
 		case a == "--":
 			return flags, append(nums, args[i+1:]...)
-		case len(a) < 2 || a[0] != '-' || isNumeric(a):
+		case len(a) < 2 || a[0] != '-' || isNumeric(a) || isValueList(a):
 			nums = append(nums, a)
 		default:
 			flags = append(flags, a)
@@ -298,6 +299,32 @@ func isNumeric(s string) bool {
 		}
 	}
 	return len(toks) > 0
+}
+
+// isValueList reports whether a is a comma-separated value list that only
+// looks like a flag because it starts with '-', as in "-1,foo" or
+// "-1,-2,x". Real flags are left alone, including ones whose value contains
+// a comma ("--min=1,2") and tokens that themselves look like flags ("-w,1").
+func isValueList(a string) bool {
+	if !strings.Contains(a, ",") {
+		return false
+	}
+	name := strings.TrimLeft(a, "-")
+	if eq := strings.IndexByte(name, '='); eq >= 0 && !strings.Contains(name[:eq], ",") {
+		return false
+	}
+	toks := fields(a)
+	sawNum := false
+	for _, t := range toks {
+		if _, ok := parseNumber(t); ok {
+			sawNum = true
+			continue
+		}
+		if strings.HasPrefix(t, "-") {
+			return false
+		}
+	}
+	return sawNum
 }
 
 // takesValue reports whether the named flag consumes the next argument.

@@ -168,6 +168,23 @@ func TestSplitArgs(t *testing.T) {
 			flags: []string{"-x"},
 			nums:  []string{"1"},
 		},
+		{
+			args: []string{"-1,foo", "4"},
+			nums: []string{"-1,foo", "4"},
+		},
+		{
+			args: []string{"-1,-2,x"},
+			nums: []string{"-1,-2,x"},
+		},
+		{
+			args:  []string{"--min=1,2", "3"},
+			flags: []string{"--min=1,2"},
+			nums:  []string{"3"},
+		},
+		{
+			args:  []string{"-w,1"},
+			flags: []string{"-w,1"},
+		},
 	}
 	for _, tt := range tests {
 		flags, nums := splitArgs(fs, tt.args)

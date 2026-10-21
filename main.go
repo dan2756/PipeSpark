@@ -105,10 +105,15 @@ func (b *bound) String() string {
 
 func (b *bound) Set(s string) error {
 	v, err := strconv.ParseFloat(s, 64)
-	if err != nil {
+	// Overflow (1e999) is a range error, not a syntax error. ParseFloat
+	// reports it as ±Inf plus ErrRange; named Inf and NaN parse cleanly.
+	if err != nil && !errors.Is(err, strconv.ErrRange) {
 		return errors.New("not a number")
 	}
 	if math.IsNaN(v) || math.IsInf(v, 0) {
+		if errors.Is(err, strconv.ErrRange) {
+			return errors.New("out of range")
+		}
 		return errors.New("must be a finite number")
 	}
 	b.v, b.set = v, true

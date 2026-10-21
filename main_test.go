@@ -64,6 +64,10 @@ func TestRun(t *testing.T) {
 
 		{name: "min equals max", args: []string{"--min", "5", "--max", "5", "1"}, code: 2, errText: "--min must be less than --max"},
 		{name: "bad min", args: []string{"--min", "x", "1"}, code: 2, errText: "invalid value"},
+		{name: "min overflow", args: []string{"--min", "1e999", "1"}, code: 2, errText: "out of range"},
+		{name: "max overflow", args: []string{"--max", "-1e309", "1"}, code: 2, errText: "out of range"},
+		{name: "min nan", args: []string{"--min", "NaN", "1"}, code: 2, errText: "must be a finite number"},
+		{name: "max inf", args: []string{"--max", "-Inf", "1"}, code: 2, errText: "must be a finite number"},
 		{name: "min needs value", args: []string{"--min"}, code: 2, errText: "needs an argument"},
 		{name: "zero width", args: []string{"-w", "0", "1"}, code: 2, errText: "--width must be at least 1"},
 		{name: "negative width", args: []string{"--width", "-3", "1"}, code: 2, errText: "--width must be at least 1"},

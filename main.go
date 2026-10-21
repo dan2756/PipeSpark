@@ -43,7 +43,8 @@ Flags:
       --strict      treat anything that isn't a number as an error
       --field K     take only the K-th number from each line of input
       --stream      keep reading and redraw the last --width values in
-                    place (width defaults to fit the terminal)
+                    place (width defaults to the terminal, or 60 when
+                    stdout isn't one)
   -h, --help        show this help
       --version     print the version
 

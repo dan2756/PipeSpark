@@ -4,8 +4,13 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io"
+	"os"
+	"os/signal"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 	"unicode/utf8"
 )
 
@@ -228,6 +233,116 @@ func TestStreamErrors(t *testing.T) {
 	_, errOut, code = runStream(t, nil, "", "1", "2")
 	if code != 2 || !strings.Contains(errOut, "--stream reads standard input") {
 		t.Errorf("args: exit %d, stderr %q", code, errOut)
+	}
+}
+
+// errAfterReader yields pending, then a hard error. bufio will ask
+// again once the buffered bytes are consumed.
+type errAfterReader struct {
+	pending string
+	err     error
+}
+
+func (e *errAfterReader) Read(p []byte) (int, error) {
+	if e.pending == "" {
+		return 0, e.err
+	}
+	n := copy(p, e.pending)
+	e.pending = e.pending[n:]
+	return n, nil
+}
+
+func TestStreamReadErrorFinishesLine(t *testing.T) {
+	var out, errOut bytes.Buffer
+	c := &cli{
+		stdin:      &errAfterReader{pending: "1\n2\n", err: errors.New("broken pipe")},
+		stdout:     &out,
+		stderr:     &errOut,
+		stdoutTerm: fakeTerm(80),
+	}
+	code := c.run([]string{"--stream", "-w", "3"})
+	if code != 1 || !strings.Contains(errOut.String(), "broken pipe") {
+		t.Fatalf("exit %d, stderr %q", code, errOut.String())
+	}
+	if want := "\r▄\x1b[K\r▁█\x1b[K\n"; out.String() != want {
+		t.Errorf("stdout = %q, want %q", out.String(), want)
+	}
+}
+
+// lockedBuffer is a bytes.Buffer safe for one writer and one reader.
+type lockedBuffer struct {
+	mu sync.Mutex
+	b  bytes.Buffer
+}
+
+func (l *lockedBuffer) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.b.Write(p)
+}
+
+func (l *lockedBuffer) String() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.b.String()
+}
+
+func TestStreamInterrupt(t *testing.T) {
+	// Hold SIGINT in this test too, so a signal that arrives before
+	// stream installs its own handler cannot kill the process.
+	caught := make(chan os.Signal, 4)
+	signal.Notify(caught, os.Interrupt)
+	defer signal.Stop(caught)
+
+	pr, pw := io.Pipe()
+	defer pr.Close()
+	defer pw.Close()
+
+	out := &lockedBuffer{}
+	var errOut bytes.Buffer
+	c := &cli{
+		stdin:      pr,
+		stdout:     out,
+		stderr:     &errOut,
+		stdoutTerm: fakeTerm(80),
+	}
+	done := make(chan int, 1)
+	go func() {
+		done <- c.run([]string{"--stream", "-w", "3"})
+	}()
+
+	if _, err := io.WriteString(pw, "1\n"); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for !strings.Contains(out.String(), "\r▄") && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	if !strings.Contains(out.String(), "\r▄") {
+		t.Fatalf("timed out waiting for a frame, stdout %q, stderr %q", out.String(), errOut.String())
+	}
+
+	proc, err := os.FindProcess(os.Getpid())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := proc.Signal(os.Interrupt); err != nil {
+		t.Fatal(err)
+	}
+
+	select {
+	case code := <-done:
+		if code != 130 {
+			t.Fatalf("exit %d, stderr %q, stdout %q", code, errOut.String(), out.String())
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("stream did not return after SIGINT")
+	}
+	if got := out.String(); !strings.HasSuffix(got, "\n") {
+		t.Fatalf("stdout %q does not finish the line", got)
+	}
+	if errOut.Len() != 0 {
+		t.Fatalf("stderr = %q", errOut.String())
 	}
 }
 

@@ -42,6 +42,32 @@ func TestResample(t *testing.T) {
 	}
 }
 
+func TestResampleWideIndex(t *testing.T) {
+	// These sizes make i*n exceed MaxInt32. A 32-bit multiply wraps,
+	// and the resulting index panics or drops values.
+	const n, width = 100000, 99999
+	vals := make([]float64, n)
+	for i := range vals {
+		vals[i] = 1
+	}
+	got := resample(vals, width, aggregates["sum"])
+	if len(got) != width {
+		t.Fatalf("len = %d, want %d", len(got), width)
+	}
+	if s := sum(got); s != float64(n) {
+		t.Fatalf("buckets sum to %v, want %d", s, n)
+	}
+
+	src := make([]float64, 3000)
+	for i := range src {
+		src[i] = float64(i + 1)
+	}
+	out := resample(src, 800000, aggregates["avg"])
+	if len(out) != 800000 || out[0] != 1 || out[len(out)-1] != float64(len(src)) {
+		t.Fatalf("stretch len %d first %v last %v", len(out), out[0], out[len(out)-1])
+	}
+}
+
 func TestResampleKeepsEveryValue(t *testing.T) {
 	// Every input value must land in exactly one bucket, whatever the
 	// width, so the bucket sums always add back up to the total.

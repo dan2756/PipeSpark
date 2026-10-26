@@ -62,13 +62,20 @@ func resample(vals []float64, width int, agg aggregate) []float64 {
 	out := make([]float64, width)
 	if width > n {
 		for i := range out {
-			out[i] = vals[i*n/width]
+			out[i] = vals[scaleIndex(i, n, width)]
 		}
 		return out
 	}
 	for i := range out {
-		lo, hi := i*n/width, (i+1)*n/width
+		lo, hi := scaleIndex(i, n, width), scaleIndex(i+1, n, width)
 		out[i] = agg(vals[lo:hi])
 	}
 	return out
+}
+
+// scaleIndex returns i*n/width. The multiply is done in int64 so a
+// 32-bit int cannot wrap: width and n can each be large enough that
+// their product exceeds MaxInt32 while both still fit in memory.
+func scaleIndex(i, n, width int) int {
+	return int(int64(i) * int64(n) / int64(width))
 }

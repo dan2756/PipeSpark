@@ -155,6 +155,9 @@ func (c *cli) stream(o *options, p parser) int {
 				win.fit(cols-1, o.frameWidth)
 			}
 			if err := c.frame(o.draw(win.vals, win.vals), tty); err != nil {
+				// A later frame can fail after an earlier one was drawn.
+				// Finish that line so the error isn't appended to it.
+				_ = endLine()
 				return c.fail(err)
 			}
 			drawn = true

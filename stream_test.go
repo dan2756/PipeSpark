@@ -38,6 +38,44 @@ func TestStreamFrames(t *testing.T) {
 	}
 }
 
+// failNth fails the n-th Write (0-based) and records the rest.
+type failNth struct {
+	n   int
+	i   int
+	err error
+	buf bytes.Buffer
+}
+
+func (f *failNth) Write(p []byte) (int, error) {
+	if f.i == f.n {
+		f.i++
+		return 0, f.err
+	}
+	f.i++
+	f.buf.Write(p)
+	return len(p), nil
+}
+
+func TestStreamFrameWriteErrorFinishesLine(t *testing.T) {
+	// The first in-place frame is drawn; the next frame cannot be written.
+	// The line still has to be finished so the error starts on its own line.
+	out := &failNth{n: 1, err: errors.New("no space left on device")}
+	var errOut bytes.Buffer
+	c := &cli{
+		stdin:      strings.NewReader("1\n2\n"),
+		stdout:     out,
+		stderr:     &errOut,
+		stdoutTerm: fakeTerm(80),
+	}
+	code := c.run([]string{"--stream", "-w", "3"})
+	if code != 1 || !strings.Contains(errOut.String(), "no space left on device") {
+		t.Fatalf("exit %d, stderr %q", code, errOut.String())
+	}
+	if got, want := out.buf.String(), "\r▄\x1b[K\n"; got != want {
+		t.Errorf("stdout = %q, want %q", got, want)
+	}
+}
+
 func TestStreamFinalNewlineWriteError(t *testing.T) {
 	// Two in-place frames succeed; the newline that finishes the line does not.
 	var errOut bytes.Buffer

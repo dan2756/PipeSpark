@@ -27,17 +27,24 @@ func sum(vals []float64) float64 {
 }
 
 // mean averages vals, which must not be empty. If the total is too large
-// for a float64, each value is divided down before adding instead.
+// for a float64, scale by the largest magnitude first. Dividing each value
+// by the count still overflows (three MaxFloat64s sum to +Inf) and does not
+// cancel a value against its negative.
 func mean(vals []float64) float64 {
 	n := float64(len(vals))
 	if m := sum(vals) / n; !math.IsInf(m, 0) {
 		return m
 	}
-	var m float64
+	var scale float64
 	for _, v := range vals {
-		m += v / n
+		scale = math.Max(scale, math.Abs(v))
 	}
-	return m
+	var s float64
+	for _, v := range vals {
+		s += v / scale
+	}
+	// Divide before scaling back so n * scale cannot overflow.
+	return (s / n) * scale
 }
 
 // aggregateNames lists the valid --agg values for messages.

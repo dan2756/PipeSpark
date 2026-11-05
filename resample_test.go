@@ -96,6 +96,22 @@ func TestSummary(t *testing.T) {
 	}
 }
 
+func TestMeanOfExtremes(t *testing.T) {
+	max := math.MaxFloat64
+	// Dividing MaxFloat64 by 3 and adding three times overflows to +Inf.
+	if got := mean([]float64{max, max, max}); got != max || math.IsInf(got, 0) {
+		t.Errorf("mean of three MaxFloat64 = %v, want %v", got, max)
+	}
+	if got := mean([]float64{-max, -max, -max}); got != -max || math.IsInf(got, 0) {
+		t.Errorf("mean of three -MaxFloat64 = %v, want %v", got, -max)
+	}
+	// The same division leaves a huge leftover instead of cancelling.
+	got := mean([]float64{max, max, max, -max, -max, -max})
+	if got != 0 || math.IsInf(got, 0) {
+		t.Errorf("mean of cancelling extremes = %v, want 0", got)
+	}
+}
+
 func TestFormatNum(t *testing.T) {
 	tests := map[float64]string{
 		0:           "0",

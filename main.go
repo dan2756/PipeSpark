@@ -104,6 +104,32 @@ func (b *bound) String() string {
 	return strconv.FormatFloat(b.v, 'g', -1, 64)
 }
 
+// setPlatformInt parses an integer flag in 64 bits, then narrows it to int.
+// flag.Int uses the platform word size, so on a 32-bit machine a value
+// such as the largest int64 is rejected here as out of range, and validate
+// never gets to apply the same limit a 64-bit machine would.
+func setPlatformInt(dst *int, s string) error {
+	n, err := strconv.ParseInt(s, 0, 64)
+	if err != nil {
+		if errors.Is(err, strconv.ErrSyntax) {
+			return errors.New("parse error")
+		}
+		if errors.Is(err, strconv.ErrRange) {
+			return errors.New("value out of range")
+		}
+		return err
+	}
+	switch {
+	case n > int64(math.MaxInt):
+		*dst = math.MaxInt
+	case n < int64(math.MinInt):
+		*dst = math.MinInt
+	default:
+		*dst = int(n)
+	}
+	return nil
+}
+
 func (b *bound) Set(s string) error {
 	v, err := strconv.ParseFloat(s, 64)
 	// Overflow (1e999) is a range error, not a syntax error. ParseFloat
@@ -153,13 +179,13 @@ func (c *cli) run(args []string) int {
 	fs.Var(&o.lo, "min", "")
 	fs.Var(&o.hi, "max", "")
 	fs.BoolVar(&o.strict, "strict", false, "")
-	fs.IntVar(&o.width, "w", 0, "")
-	fs.IntVar(&o.width, "width", 0, "")
+	fs.Func("w", "", func(s string) error { return setPlatformInt(&o.width, s) })
+	fs.Func("width", "", func(s string) error { return setPlatformInt(&o.width, s) })
 	fs.StringVar(&o.agg, "agg", "avg", "")
 	fs.BoolVar(&o.ascii, "ascii", false, "")
 	fs.BoolVar(&o.stats, "stats", false, "")
 	fs.BoolVar(&o.color, "color", false, "")
-	fs.IntVar(&o.field, "field", 0, "")
+	fs.Func("field", "", func(s string) error { return setPlatformInt(&o.field, s) })
 	fs.BoolVar(&o.stream, "stream", false, "")
 	showVersion := fs.Bool("version", false, "")
 

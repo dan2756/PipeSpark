@@ -57,6 +57,7 @@ func TestRun(t *testing.T) {
 		{name: "huge pinned range", args: []string{"--min", "-1e308", "--max", "1e308", "0"}, out: "▅\n"},
 		{name: "huge width avg", args: []string{"-w", "2", "1", "1e308", "1e308"}, out: "▁█\n"},
 		{name: "huge width sum", args: []string{"-w", "2", "--agg", "sum", "1", "1e308", "1e308"}, out: "▁█\n"},
+		{name: "width sum cancels", args: []string{"-w", "2", "--agg", "sum", "1", "1", "1", "1e308", "1e308", "-1e308", "-1e308"}, out: "█▁\n"},
 
 		{name: "strict", stdin: "1 two 3\n", args: []string{"--strict"}, code: 1, errText: `line 1: not a number: "two"`},
 		{name: "strict args", args: []string{"--strict", "1", "x"}, code: 1, errText: `not a number: "x"`},

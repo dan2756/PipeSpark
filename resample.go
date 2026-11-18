@@ -13,9 +13,7 @@ var aggregates = map[string]aggregate{
 	"avg": mean,
 	"max": func(v []float64) float64 { return slices.Max(v) },
 	"min": func(v []float64) float64 { return slices.Min(v) },
-	// A total too large for a float64 is held at the largest one, so it
-	// still draws as the tallest (or lowest) bar.
-	"sum": func(v []float64) float64 { return max(-math.MaxFloat64, min(sum(v), math.MaxFloat64)) },
+	"sum": finiteSum,
 }
 
 func sum(vals []float64) float64 {
@@ -24,6 +22,33 @@ func sum(vals []float64) float64 {
 		t += v
 	}
 	return t
+}
+
+// finiteSum adds vals. Adding left to right overflows to ±Inf as soon as
+// the partial total leaves the float64 range, and later values that would
+// have cancelled it never bring it back. Retry in units of the largest
+// magnitude so a total that does fit stays finite. One that still doesn't
+// is clamped to ±MaxFloat64 and draws as an end bar.
+func finiteSum(vals []float64) float64 {
+	if t := sum(vals); !math.IsInf(t, 0) {
+		return t
+	}
+	var scale float64
+	for _, v := range vals {
+		scale = math.Max(scale, math.Abs(v))
+	}
+	var s float64
+	for _, v := range vals {
+		s += v / scale
+	}
+	total := s * scale
+	if !math.IsInf(total, 0) {
+		return total
+	}
+	if s < 0 {
+		return -math.MaxFloat64
+	}
+	return math.MaxFloat64
 }
 
 // mean averages vals, which must not be empty. If the total is too large

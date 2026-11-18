@@ -26,6 +26,8 @@ func TestRun(t *testing.T) {
 		errText string
 	}{
 		{name: "stdin", stdin: "1\n2\n3\n4\n5\n6\n7\n8\n", out: "▁▂▃▄▅▆▇█\n"},
+		{name: "utf8 bom", stdin: "\ufeff1\n2\n3\n", out: "▁▅█\n"},
+		{name: "utf8 bom strict", stdin: "\ufeff1 2\n", args: []string{"--strict"}, out: "▁█\n"},
 		{name: "args", args: []string{"1", "5", "22", "13", "53"}, out: "▁▁▄▂█\n"},
 		{name: "commas", stdin: "1,2,3\n", out: "▁▅█\n"},
 		{name: "args win over stdin", stdin: "9 9 9", args: []string{"1", "2"}, out: "▁█\n"},

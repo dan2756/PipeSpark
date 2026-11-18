@@ -49,6 +49,31 @@ func TestParseLine(t *testing.T) {
 	}
 }
 
+func TestParseLineStripsBOM(t *testing.T) {
+	tests := []struct {
+		name string
+		p    parser
+		line string
+		want []float64
+	}{
+		{"plain", parser{}, "\ufeff1 2 3", []float64{1, 2, 3}},
+		{"commas", parser{}, "\ufeff1,2,3", []float64{1, 2, 3}},
+		{"strict", parser{strict: true}, "\ufeff1 2", []float64{1, 2}},
+		{"field", parser{field: 1}, "\ufeff10 20 30", []float64{10}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := tt.p.parseLine(tt.line)
+			if err != nil {
+				t.Fatalf("parseLine: %v", err)
+			}
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("parseLine = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestParseLineStrict(t *testing.T) {
 	p := parser{strict: true}
 	if _, err := p.parseLine("1 2 3"); err != nil {

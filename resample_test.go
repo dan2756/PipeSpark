@@ -31,6 +31,8 @@ func TestResample(t *testing.T) {
 		// Totals beyond a float64 average correctly and sum to the limit.
 		{"huge avg", []float64{1e308, 1e308, -1e308, -1e308}, 2, "avg", []float64{1e308, -1e308}},
 		{"huge sum", []float64{1e308, 1e308, -1e308, -1e308}, 2, "sum", []float64{math.MaxFloat64, -math.MaxFloat64}},
+		// 1e308+1e308 overflows, but the two negatives bring the bucket back to 0.
+		{"cancel sum", []float64{1, 1, 1, 1e308, 1e308, -1e308, -1e308}, 2, "sum", []float64{3, 0}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -39,6 +41,19 @@ func TestResample(t *testing.T) {
 				t.Errorf("resample(%v, %d, %s) = %v, want %v", tt.vals, tt.width, tt.agg, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestFiniteSumCancels(t *testing.T) {
+	// Either order overflows a left-to-right total before the other sign
+	// can cancel it. The sum of these values is 0.
+	for _, vals := range [][]float64{
+		{1e308, 1e308, -1e308, -1e308},
+		{-1e308, -1e308, 1e308, 1e308},
+	} {
+		if got := finiteSum(vals); got != 0 || math.IsInf(got, 0) {
+			t.Errorf("finiteSum(%v) = %v, want 0", vals, got)
+		}
 	}
 }
 

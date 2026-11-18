@@ -52,6 +52,9 @@ type parser struct {
 
 // parseLine returns the numbers on a single line.
 func (p parser) parseLine(line string) ([]float64, error) {
+	// A leading UTF-8 BOM is not a number. Left in place it sticks to the
+	// first token, so that value is skipped, or --strict rejects the line.
+	line = strings.TrimPrefix(line, "\uFEFF")
 	type number struct {
 		tok string
 		v   float64

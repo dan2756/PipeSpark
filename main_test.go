@@ -26,6 +26,8 @@ func TestRun(t *testing.T) {
 		errText string
 	}{
 		{name: "stdin", stdin: "1\n2\n3\n4\n5\n6\n7\n8\n", out: "▁▂▃▄▅▆▇█\n"},
+		{name: "utf8 bom", stdin: "\ufeff1\n2\n3\n", out: "▁▅█\n"},
+		{name: "utf8 bom strict", stdin: "\ufeff1 2\n", args: []string{"--strict"}, out: "▁█\n"},
 		{name: "args", args: []string{"1", "5", "22", "13", "53"}, out: "▁▁▄▂█\n"},
 		{name: "commas", stdin: "1,2,3\n", out: "▁▅█\n"},
 		{name: "args win over stdin", stdin: "9 9 9", args: []string{"1", "2"}, out: "▁█\n"},
@@ -45,6 +47,7 @@ func TestRun(t *testing.T) {
 		{name: "ascii constant", args: []string{"--ascii", "2", "2"}, out: "~~\n"},
 		{name: "stats", args: []string{"--stats", "1", "5", "22", "13", "53"}, out: "▁▁▄▂█  min 1  max 53  avg 18.8  n 5\n"},
 		{name: "width avg", stdin: "1 9 2 8 3 7 4 6", args: []string{"-w", "4"}, out: "▄▄▄▄\n"},
+		{name: "hex width", args: []string{"-w", "0x4", "1", "2", "3", "4", "5", "6", "7", "8"}, out: "▁▃▆█\n"},
 		{name: "width max", stdin: "1 9 2 8 3 7 4 6", args: []string{"--width", "4", "--agg", "max"}, out: "█▆▃▁\n"},
 		{name: "width min", stdin: "1 9 2 8 3 7 4 6", args: []string{"--width=4", "--agg=min"}, out: "▁▃▆█\n"},
 		{name: "width stretch", args: []string{"-w", "6", "1", "2", "3"}, out: "▁▁▅▅██\n"},
@@ -55,6 +58,7 @@ func TestRun(t *testing.T) {
 		{name: "huge pinned range", args: []string{"--min", "-1e308", "--max", "1e308", "0"}, out: "▅\n"},
 		{name: "huge width avg", args: []string{"-w", "2", "1", "1e308", "1e308"}, out: "▁█\n"},
 		{name: "huge width sum", args: []string{"-w", "2", "--agg", "sum", "1", "1e308", "1e308"}, out: "▁█\n"},
+		{name: "width sum cancels", args: []string{"-w", "2", "--agg", "sum", "1", "1", "1", "1e308", "1e308", "-1e308", "-1e308"}, out: "█▁\n"},
 
 		{name: "strict", stdin: "1 two 3\n", args: []string{"--strict"}, code: 1, errText: `line 1: not a number: "two"`},
 		{name: "strict args", args: []string{"--strict", "1", "x"}, code: 1, errText: `not a number: "x"`},
@@ -75,6 +79,7 @@ func TestRun(t *testing.T) {
 		{name: "zero width", args: []string{"-w", "0", "1"}, code: 2, errText: "--width must be at least 1"},
 		{name: "negative width", args: []string{"--width", "-3", "1"}, code: 2, errText: "--width must be at least 1"},
 		{name: "huge width", args: []string{"-w", "9223372036854775807", "1"}, code: 2, errText: "--width must be at most 1000000"},
+		{name: "huge field", args: []string{"--field", "9223372036854775807"}, code: 1, errText: "no numbers in input"},
 		{name: "bad agg", args: []string{"--agg", "median", "1"}, code: 2, errText: `--agg must be one of avg, max, min, sum, not "median"`},
 		{name: "unknown flag", args: []string{"--nope"}, code: 2, errText: "not defined"},
 	}
